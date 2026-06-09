@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <span class="logo">Cloud Vault</span>
+      <span class="status-dot" id="statusDot" title="Connection status"></span>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="actions">
+      <button class="btn btn-primary" id="btnSavePage">保存当前页面</button>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btnSaveSelection" disabled>保存选中文本</button>
+        <button class="btn btn-secondary" id="btnSaveLink">保存链接</button>
+      </div>
+    </div>
+
+    <!-- Right-click hints -->
+    <div class="section hint-section">
+      <label class="section-label">右键菜单</label>
+      <div class="hint-row">链接: 右键 → "保存此链接"</div>
+      <div class="hint-row">图片: 右键 → "保存图片"</div>
+      <div class="hint-row">文本: 选中 → 右键 → "保存选中文本"</div>
+      <div class="hint-row">快捷键: Alt+S 保存页面 / Alt+Shift+S 保存选中</div>
+    </div>
+
+    <!-- Priority -->
+    <div class="section">
+      <label class="section-label">优先级</label>
+      <div class="priority-group">
+        <button class="priority-btn" data-priority="normal" id="priNormal">Normal</button>
+        <button class="priority-btn active" data-priority="high" id="priHigh">High</button>
+        <button class="priority-btn" data-priority="urgent" id="priUrgent">Urgent</button>
+      </div>
+    </div>
+
+    <!-- Tags -->
+    <div class="section">
+      <label class="section-label">标签</label>
+      <div class="tags-container" id="tagsContainer">
+        <button class="tag-chip" data-tag="AI服务器">AI服务器</button>
+        <button class="tag-chip" data-tag="CPO">CPO</button>
+        <button class="tag-chip" data-tag="光模块">光模块</button>
+        <button class="tag-chip" data-tag="PCB">PCB</button>
+        <button class="tag-chip" data-tag="MLCC">MLCC</button>
+        <button class="tag-chip" data-tag="HBM">HBM</button>
+        <button class="tag-chip" data-tag="半导体设备">半导体设备</button>
+        <button class="tag-chip" data-tag="算力">算力</button>
+        <button class="tag-chip" data-tag="先进封装">先进封装</button>
+        <button class="tag-chip" data-tag="美股">美股</button>
+        <button class="tag-chip" data-tag="A股映射">A股映射</button>
+        <button class="tag-chip" data-tag="港股">港股</button>
+        <button class="tag-chip" data-tag="财报">财报</button>
+        <button class="tag-chip" data-tag="行业趋势">行业趋势</button>
+        <button class="tag-chip" data-tag="政策">政策</button>
+      </div>
+    </div>
+
+    <!-- Research Intent -->
+    <div class="section">
+      <label class="section-label">研究意图</label>
+      <input type="text" id="researchIntent" class="input"
+             placeholder="为什么要保存？想研究什么？">
+    </div>
+
+    <!-- User Notes -->
+    <div class="section">
+      <label class="section-label">备注</label>
+      <textarea id="userNotes" class="input textarea" rows="2"
+                placeholder="补充笔记..."></textarea>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar" id="statusBar">
+      <span id="statusText">就绪</span>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <a href="#" id="linkOptions">设置</a>
+      <span class="sep">|</span>
+      <a href="#" id="linkRecent">最近捕获</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

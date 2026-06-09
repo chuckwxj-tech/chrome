@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Vault Capture — 设置</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #1a1a2e;
+      --primary: #1d9bf0;
+      --border: #e0e0e0;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      color: var(--fg);
+      background: var(--bg);
+      max-width: 520px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 28px;
+    }
+
+    .field {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #555;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="url"] {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-family: monospace;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #999;
+      margin-top: 4px;
+    }
+
+    .btn {
+      padding: 9px 20px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      margin-right: 8px;
+    }
+
+    .btn-primary:hover { opacity: 0.9; }
+
+    .btn-secondary {
+      background: #f0f4f8;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { background: #e8edf2; }
+
+    .status {
+      margin-top: 18px;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+    }
+
+    .status.success { background: #eafaf1; color: #27ae60; }
+    .status.error { background: #fdedec; color: #e74c3c; }
+    .status.info { background: #ebf5fb; color: #2980b9; }
+  </style>
+</head>
+<body>
+  <h1>Cloud Vault Capture</h1>
+  <p class="subtitle">配置 API 服务器连接和认证 Token</p>
+
+  <div class="field">
+    <label for="apiUrl">API 服务器地址</label>
+    <input type="url" id="apiUrl" placeholder="https://your-server.com">
+    <p class="hint">Cloud Vault 后端 API 的完整 URL，例如 https://your-domain.com</p>
+  </div>
+
+  <div class="field">
+    <label for="captureToken">Capture Token</label>
+    <input type="password" id="captureToken" placeholder="输入你的 Capture Token">
+    <p class="hint">与服务端 .env 中 LOCAL_CAPTURE_TOKEN 一致的认证令牌</p>
+  </div>
+
+  <div style="display: flex; align-items: center;">
+    <button class="btn btn-primary" id="btnSave">保存</button>
+    <button class="btn btn-secondary" id="btnTest">测试连接</button>
+  </div>
+
+  <div id="statusArea"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>
