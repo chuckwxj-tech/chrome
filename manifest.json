@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "Cloud Vault Capture",
+  "version": "0.1.4",
+  "description": "投研信息捕获器 — 一键保存网页、选中文本、链接到 Cloud Vault 资料库",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["lib/readability.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Cloud Vault Capture",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "save-page": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "保存当前页面到 Cloud Vault"
+    },
+    "save-selection": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "保存选中文本到 Cloud Vault"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
