@@ -8,3 +8,19 @@
 node_modules/
 dist/
 build/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Backend data
+backend/data/
+*.db
+*.db-wal
+*.db-shm
+
+# IDE
+.idea/
+.vscode/

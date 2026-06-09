@@ -1,0 +1,47 @@
+{
+  "_comment": "Browser Capture routing rules — used by ingest_browser_captures.py",
+  "version": 1,
+
+  "routes": {
+    "by-tag": {
+      "enabled": true,
+      "description": "每个标签一个子目录，同名 hardlink",
+      "source_field": "tags",
+      "directory": "markdown/content-collection/by-tag"
+    },
+    "by-domain": {
+      "enabled": true,
+      "description": "按来源域名归类",
+      "source_field": "source_domain",
+      "directory": "markdown/content-collection/by-domain"
+    },
+    "by-type": {
+      "enabled": true,
+      "description": "按捕获类型归类: page / selection / link / pdf / image",
+      "source_field": "capture_type",
+      "directory": "markdown/content-collection/by-type"
+    },
+    "by-date": {
+      "enabled": true,
+      "description": "按日期归档 YYYY/MM",
+      "source_field": "storage_date",
+      "directory": "markdown/content-collection/by-date"
+    }
+  },
+
+  "priority_rules": {
+    "urgent": {
+      "extra_routes": ["research/threads/inbox"],
+      "notify": true
+    },
+    "high": {
+      "extra_routes": [],
+      "notify": false
+    }
+  },
+
+  "index": {
+    "format": "jsonl",
+    "path": "index/browser-captures-index.jsonl"
+  }
+}
