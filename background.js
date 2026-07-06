@@ -487,10 +487,12 @@ async function uploadBookmarksBatch(items) {
   if (!token) return { success: false, error: 'Token 未配置' };
   if (!items.length) return { success: false, error: '没有可上传的内容' };
 
-  let unique = 0, duplicate = 0, failed = 0;
+  let unique = 0, duplicate = 0, failed = 0, queued = 0;
+  let lastError = '';
 
   for (let i = 0; i < items.length; i += BATCH_CHUNK_SIZE) {
     const chunk = items.slice(i, i + BATCH_CHUNK_SIZE);
+    const payload = { items: chunk, capture_type: 'post', source: 'x_bookmarks' };
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 60000);
@@ -500,37 +502,60 @@ async function uploadBookmarksBatch(items) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          items: chunk,
-          capture_type: 'post',
-          source: 'x_bookmarks',
-        }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
       clearTimeout(timeout);
 
-      if (!response.ok) {
-        failed += chunk.length;
+      if (response.ok) {
+        const data = await response.json();
+        unique += data.unique || 0;
+        duplicate += data.duplicate || 0;
+        failed += data.failed || 0;
         continue;
       }
-      const data = await response.json();
-      unique += data.unique || 0;
-      duplicate += data.duplicate || 0;
-      failed += data.failed || 0;
-    } catch (_) {
-      failed += chunk.length;
+
+      let detail = '';
+      try { detail = (await response.json()).detail || ''; } catch (_) {}
+
+      if (response.status === 404) {
+        // Endpoint missing: the server is running an older backend
+        lastError = '接口不存在 (404) — 服务器后端不是最新版本，请更新部署 backend';
+        failed += chunk.length;
+      } else if (response.status === 502 || response.status === 504) {
+        lastError = `网关错误 (${response.status}) — 请求被代理拦截，请为服务器 IP 配置直连规则`;
+        await enqueueFailedCapture('/capture/batch', payload);
+        queued += chunk.length;
+      } else if (response.status >= 500 || response.status === 429 || response.status === 401) {
+        lastError = `服务器返回 ${response.status}${detail ? ' — ' + detail : ''}`;
+        await enqueueFailedCapture('/capture/batch', payload);
+        queued += chunk.length;
+      } else {
+        lastError = `HTTP ${response.status}${detail ? ' — ' + detail : ''}`;
+        failed += chunk.length;
+      }
+    } catch (err) {
+      lastError = err.name === 'AbortError' ? '请求超时' : '无法连接服务器';
+      await enqueueFailedCapture('/capture/batch', payload);
+      queued += chunk.length;
     }
   }
 
-  const summary = `新增 ${unique} 条，已存在 ${duplicate} 条` +
-    (failed ? `，失败 ${failed} 条` : '');
-  showNotification('Cloud Vault 书签导出完成', summary);
+  const parts = [];
+  if (unique) parts.push(`新增 ${unique} 条`);
+  if (duplicate) parts.push(`已存在 ${duplicate} 条`);
+  if (queued) parts.push(`${queued} 条已入队自动补传`);
+  if (failed) parts.push(`失败 ${failed} 条`);
+  const summary = (parts.join('，') || '无结果') + (lastError ? `（${lastError}）` : '');
+
+  const ok = unique + duplicate + queued > 0;
+  showNotification(ok ? 'Cloud Vault 书签导出' : 'Cloud Vault 书签导出失败', summary);
   console.log('[Cloud Vault] bookmarks export:', summary);
 
-  if (unique + duplicate === 0 && failed > 0) {
-    return { success: false, error: '全部上传失败，请检查服务器连接', failed };
+  if (!ok) {
+    return { success: false, error: lastError || '全部上传失败', failed };
   }
-  return { success: true, unique, duplicate, failed };
+  return { success: true, unique, duplicate, failed, queued, error: lastError || undefined };
 }
 
 // ── Context Menus ────────────────────────────────────────────────

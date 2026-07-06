@@ -120,12 +120,12 @@
         items,
       });
       if (result?.success) {
-        setStatus(
-          `Cloud Vault: 完成 — 新增 ${result.unique} 条，` +
-          `已存在 ${result.duplicate} 条` +
-          (result.failed ? `，失败 ${result.failed} 条` : ''),
-          true,
-        );
+        const parts = [];
+        if (result.unique) parts.push(`新增 ${result.unique} 条`);
+        if (result.duplicate) parts.push(`已存在 ${result.duplicate} 条`);
+        if (result.queued) parts.push(`${result.queued} 条已入队，服务器恢复后自动补传`);
+        if (result.failed) parts.push(`失败 ${result.failed} 条`);
+        setStatus(`Cloud Vault: 完成 — ${parts.join('，')}`, true);
       } else {
         setStatus(`Cloud Vault: 上传失败 — ${result?.error || '未知错误'}`, true);
       }
