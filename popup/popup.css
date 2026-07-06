@@ -114,6 +114,12 @@ body {
   background: #e8edf2;
 }
 
+.btn-full {
+  display: block;
+  width: 100%;
+  flex: none;
+}
+
 /* Section */
 .section {
   margin-bottom: 10px;

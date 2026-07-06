@@ -130,7 +130,47 @@ class PdfCaptureRequest(BaseModel):
         return _validate_content_hash(v)
 
 
+class BatchCaptureItem(BaseModel):
+    """One post/link in a batch export (e.g. an X bookmark)."""
+
+    url: str
+    title: str = ""
+    content: str = ""
+    author: str | None = None
+    published_at: str | None = None
+    tags: list[str] = Field(default_factory=list, max_length=10)
+    priority: Literal["normal", "high", "urgent"] = "normal"
+
+    @field_validator("url")
+    @classmethod
+    def url_must_be_http(cls, v: str) -> str:
+        return _validate_http_url(v)
+
+
+class BatchCaptureRequest(BaseModel):
+    items: list[BatchCaptureItem] = Field(min_length=1, max_length=200)
+    capture_type: Literal["post", "link", "page"] = "post"
+    source: str = ""
+
+
 # ── Response schemas ──────────────────────────────────────────────
+
+class BatchItemResult(BaseModel):
+    url: str
+    success: bool
+    id: str | None = None
+    dedup_status: str | None = None
+    error: str | None = None
+
+
+class BatchCaptureResponse(BaseModel):
+    success: bool = True
+    total: int
+    unique: int
+    duplicate: int
+    failed: int
+    results: list[BatchItemResult]
+
 
 class CaptureResponse(BaseModel):
     success: bool

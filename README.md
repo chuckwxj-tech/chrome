@@ -28,6 +28,11 @@ The token is stored in Chrome extension local storage. Do not commit tokens, `.e
 - Popup tag chips are configurable in the options page (comma-separated
   custom tags; empty falls back to the built-in set).
 - Popup 「最近捕获」 lists the latest captures from `GET /captures/recent`.
+- X bookmarks export: popup 「X 导出 → 导出书签」 opens x.com/i/bookmarks,
+  auto-scrolls at a human pace collecting tweets from the DOM
+  (`collectors/x-bookmarks.js`), then bulk-uploads via `POST /capture/batch`.
+  URL-based dedup makes re-exports incremental — only new bookmarks are
+  stored. An on-page overlay shows progress with a stop button.
 - Analysis loop: `POST /captures/{id}/build-analysis-prompt` generates a
   prompt whose template ends with a structured `entities` JSON block;
   paste the LLM's full answer into `POST /captures/{id}/analysis-result`

@@ -13,6 +13,9 @@ from schemas import (
     PdfCaptureRequest,
     ImageCaptureRequest,
     CaptureResponse,
+    BatchCaptureRequest,
+    BatchCaptureResponse,
+    BatchItemResult,
 )
 from services.dedup import check_dedup
 from services.file_writer import write_all_files
@@ -240,6 +243,79 @@ async def capture_pdf(
 
     return _save_capture(
         db, record, body.url, duplicate_message="PDF already captured",
+    )
+
+
+# ── POST /capture/batch ─────────────────────────────────────────────
+
+
+@router.post("/batch", response_model=BatchCaptureResponse, status_code=201)
+async def capture_batch(
+    body: BatchCaptureRequest,
+    request: Request,
+    token: str = Depends(verify_token),
+):
+    """Bulk-ingest posts/links (e.g. an X bookmarks export).
+
+    Each item runs through the normal dedup pipeline independently, so
+    re-exporting the same bookmarks is an incremental sync: existing
+    items come back as 'duplicate', only new ones are stored.
+    """
+    db = _get_db(request)
+    results: list[BatchItemResult] = []
+    unique = duplicate = failed = 0
+
+    for item in body.items:
+        try:
+            # Hash url+content: identical short texts on different posts
+            # must not collide, and the url alone identifies re-exports.
+            content = item.content or f"Post: {item.url}"
+            content_hash = hashlib.sha256(
+                f"{item.url}\n{content}".encode()
+            ).hexdigest()
+
+            record = {
+                "capture_type": body.capture_type,
+                "url": item.url,
+                "canonical_url": item.url,
+                "title": item.title or content[:80] or item.url,
+                "content": content,
+                "content_hash": content_hash,
+                "source_domain": _extract_domain(item.url),
+                "tags": item.tags,
+                "priority": item.priority,
+                "research_intent": "",
+                "user_notes": body.source and f"来源: {body.source}" or "",
+                "author": item.author,
+                "published_at": item.published_at,
+            }
+
+            resp = _save_capture(
+                db, record, item.url,
+                duplicate_message="Already captured",
+            )
+            if resp.dedup_status == "duplicate":
+                duplicate += 1
+            else:
+                unique += 1
+            results.append(BatchItemResult(
+                url=item.url,
+                success=True,
+                id=resp.id,
+                dedup_status=resp.dedup_status,
+            ))
+        except Exception as e:
+            failed += 1
+            results.append(BatchItemResult(
+                url=item.url, success=False, error=str(e)[:200],
+            ))
+
+    return BatchCaptureResponse(
+        total=len(body.items),
+        unique=unique,
+        duplicate=duplicate,
+        failed=failed,
+        results=results,
     )
 
 

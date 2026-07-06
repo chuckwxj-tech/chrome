@@ -449,6 +449,90 @@ async function captureImage(imageUrl, altText, pageUrl) {
   return await callApi('/capture/image', body, tab.id);
 }
 
+// ── X Bookmarks Export ───────────────────────────────────────────
+const X_BOOKMARKS_URL = 'https://x.com/i/bookmarks';
+const BATCH_CHUNK_SIZE = 100;
+
+async function startBookmarksExport() {
+  const { token } = await getConfig();
+  if (!token) {
+    return { success: false, error: 'Token 未配置，请先在选项中设置' };
+  }
+
+  const tab = await chrome.tabs.create({ url: X_BOOKMARKS_URL, active: true });
+
+  // Inject the collector once the bookmarks page finishes loading
+  const onUpdated = (tabId, changeInfo, updatedTab) => {
+    if (tabId !== tab.id || changeInfo.status !== 'complete') return;
+    if (!/x\.com\/i\/bookmarks/.test(updatedTab.url || '')) return;
+    chrome.tabs.onUpdated.removeListener(onUpdated);
+    // X hydrates after 'complete'; give the timeline a moment
+    setTimeout(() => {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['collectors/x-bookmarks.js'],
+      }).catch((err) => {
+        console.error('[Cloud Vault] collector inject failed:', err.message);
+        showNotification('Cloud Vault 导出失败', '无法注入采集脚本，请确认已登录 X');
+      });
+    }, 3000);
+  };
+  chrome.tabs.onUpdated.addListener(onUpdated);
+
+  return { success: true, tabId: tab.id };
+}
+
+async function uploadBookmarksBatch(items) {
+  const { apiBase, token } = await getConfig();
+  if (!token) return { success: false, error: 'Token 未配置' };
+  if (!items.length) return { success: false, error: '没有可上传的内容' };
+
+  let unique = 0, duplicate = 0, failed = 0;
+
+  for (let i = 0; i < items.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = items.slice(i, i + BATCH_CHUNK_SIZE);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+      const response = await fetch(`${apiBase}/capture/batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items: chunk,
+          capture_type: 'post',
+          source: 'x_bookmarks',
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        failed += chunk.length;
+        continue;
+      }
+      const data = await response.json();
+      unique += data.unique || 0;
+      duplicate += data.duplicate || 0;
+      failed += data.failed || 0;
+    } catch (_) {
+      failed += chunk.length;
+    }
+  }
+
+  const summary = `新增 ${unique} 条，已存在 ${duplicate} 条` +
+    (failed ? `，失败 ${failed} 条` : '');
+  showNotification('Cloud Vault 书签导出完成', summary);
+  console.log('[Cloud Vault] bookmarks export:', summary);
+
+  if (unique + duplicate === 0 && failed > 0) {
+    return { success: false, error: '全部上传失败，请检查服务器连接', failed };
+  }
+  return { success: true, unique, duplicate, failed };
+}
+
 // ── Context Menus ────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
   ensureRetryAlarm();
@@ -595,6 +679,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       sendResponse(result);
     });
+    return true;
+  }
+
+  if (message.type === 'EXPORT_X_BOOKMARKS') {
+    startBookmarksExport().then(sendResponse);
+    return true;
+  }
+
+  if (message.type === 'X_BOOKMARKS_COLLECTED') {
+    uploadBookmarksBatch(message.items || []).then(sendResponse);
     return true;
   }
 

@@ -150,6 +150,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  const btnExportBookmarks = document.getElementById('btnExportBookmarks');
+  btnExportBookmarks.addEventListener('click', () => {
+    btnExportBookmarks.disabled = true;
+    showStatus('loading', '正在打开 X 书签页...');
+    chrome.runtime.sendMessage({ type: 'EXPORT_X_BOOKMARKS' }, (result) => {
+      btnExportBookmarks.disabled = false;
+      if (result?.success) {
+        showStatus('success', '已开始采集，请勿关闭书签标签页');
+      } else {
+        showStatus('error', result?.error || '导出启动失败');
+      }
+    });
+  });
+
   // ── Result display ─────────────────────────────────────────────
   function handleResult(result) {
     if (!result) {
