@@ -269,6 +269,69 @@ body {
   color: var(--border);
 }
 
+/* Recent captures */
+.recent-list {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fafbfc;
+}
+
+.recent-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  text-decoration: none;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+}
+
+.recent-item:last-child {
+  border-bottom: none;
+}
+
+.recent-item:hover {
+  background: var(--chip-bg);
+}
+
+.recent-type {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--chip-active);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 1px;
+}
+
+.recent-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.recent-title {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-meta {
+  font-size: 10px;
+  color: var(--fg-secondary);
+}
+
+.recent-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg-secondary);
+}
+
 /* Right-click hints */
 .hint-section {
   background: #f8f9fb;

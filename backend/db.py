@@ -158,6 +158,99 @@ class Database:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # ── Entities ──────────────────────────────────────────────────
+
+    def upsert_entity(
+        self,
+        name: str,
+        entity_type: str | None = None,
+        market: str | None = None,
+        ticker: str | None = None,
+        canonical_name: str | None = None,
+    ) -> int:
+        """Insert or update an entity by unique name. Returns entity id.
+
+        None fields never overwrite existing values, so partial updates
+        from different captures accumulate instead of erasing each other.
+        """
+        row = self._conn.execute(
+            "SELECT id FROM entities WHERE name = ?", (name,)
+        ).fetchone()
+        if row:
+            self._conn.execute(
+                """UPDATE entities SET
+                       entity_type = COALESCE(?, entity_type),
+                       market = COALESCE(?, market),
+                       ticker = COALESCE(?, ticker),
+                       canonical_name = COALESCE(?, canonical_name)
+                   WHERE id = ?""",
+                (entity_type, market, ticker, canonical_name, row["id"]),
+            )
+            self._conn.commit()
+            return row["id"]
+        cur = self._conn.execute(
+            """INSERT INTO entities (name, entity_type, market, ticker, canonical_name)
+               VALUES (?, ?, ?, ?, ?)""",
+            (name, entity_type, market, ticker, canonical_name),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def link_capture_entity(
+        self,
+        capture_id: str,
+        entity_id: int,
+        role: str | None = None,
+        confidence: float | None = None,
+        evidence: str | None = None,
+    ):
+        self._conn.execute(
+            """INSERT INTO capture_entities (capture_id, entity_id, role, confidence, evidence)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(capture_id, entity_id) DO UPDATE SET
+                   role = excluded.role,
+                   confidence = excluded.confidence,
+                   evidence = excluded.evidence""",
+            (capture_id, entity_id, role, confidence, evidence),
+        )
+        self._conn.commit()
+
+    def get_entities_for_capture(self, capture_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            """SELECT e.id, e.name, e.entity_type, e.market, e.ticker,
+                      e.canonical_name, ce.role, ce.confidence, ce.evidence
+               FROM capture_entities ce
+               JOIN entities e ON e.id = ce.entity_id
+               WHERE ce.capture_id = ?
+               ORDER BY ce.confidence DESC, e.name""",
+            (capture_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def entity_mention_stats(
+        self, limit: int = 50, since: str | None = None
+    ) -> list[dict]:
+        """Mention counts per entity across captures, most-mentioned first.
+
+        `since` filters by storage_date (YYYY-MM-DD, inclusive).
+        """
+        sql = """SELECT e.id, e.name, e.entity_type, e.market, e.ticker,
+                        COUNT(ce.capture_id) AS mention_count,
+                        MAX(c.captured_at) AS last_mentioned_at
+                 FROM entities e
+                 JOIN capture_entities ce ON ce.entity_id = e.id
+                 JOIN captures c ON c.id = ce.capture_id"""
+        params: list = []
+        if since:
+            sql += " WHERE c.storage_date >= ?"
+            params.append(since)
+        sql += """ GROUP BY e.id
+                   ORDER BY mention_count DESC, last_mentioned_at DESC
+                   LIMIT ?"""
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
     def update_analysis_prompt_path(self, capture_id: str, path: str):
         self._conn.execute(
             "UPDATE captures SET analysis_prompt_path = ? WHERE id = ?",

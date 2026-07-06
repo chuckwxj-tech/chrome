@@ -483,6 +483,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'GET_RECENT') {
+    getConfig().then(async ({ apiBase, token }) => {
+      if (!token) {
+        sendResponse({ success: false, error: 'Token 未配置' });
+        return;
+      }
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const limit = Math.min(Math.max(Number(message.limit) || 10, 1), 100);
+        const response = await fetch(`${apiBase}/captures/recent?limit=${limit}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (response.status === 401) {
+          sendResponse({ success: false, error: 'Token 无效' });
+          return;
+        }
+        if (!response.ok) {
+          sendResponse({ success: false, error: `服务器错误 ${response.status}` });
+          return;
+        }
+        const data = await response.json();
+        sendResponse({
+          success: true,
+          captures: data.captures || [],
+          total: data.total || 0,
+        });
+      } catch (err) {
+        sendResponse({
+          success: false,
+          error: err.name === 'AbortError' ? '请求超时' : '无法连接服务器',
+        });
+      }
+    });
+    return true;
+  }
+
   if (message.type === 'CHECK_CONNECTION') {
     getConfig().then(async ({ apiBase, token }) => {
       try {

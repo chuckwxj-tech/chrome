@@ -3,7 +3,14 @@
 import json
 from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
 from middleware import verify_token
-from schemas import RecentCapturesResponse, RecentCaptureItem, AnalysisPromptResponse
+from schemas import (
+    RecentCapturesResponse,
+    RecentCaptureItem,
+    AnalysisPromptResponse,
+    AttachEntitiesRequest,
+    CaptureEntitiesResponse,
+    CaptureEntityItem,
+)
 from services.analysis_prompt import write_analysis_prompt
 
 router = APIRouter(tags=["captures"])
@@ -62,4 +69,65 @@ async def build_analysis_prompt(
         id=capture_id,
         file_path=file_path,
         message="Analysis prompt generated",
+    )
+
+
+@router.post("/{capture_id}/entities", response_model=CaptureEntitiesResponse)
+async def attach_entities(
+    capture_id: str,
+    body: AttachEntitiesRequest,
+    request: Request,
+    token: str = Depends(verify_token),
+):
+    """Attach structured entity mappings (公司/ticker/市场) to a capture.
+
+    Designed as the write-back target for the analysis step: after the LLM
+    fills in the 相关公司映射 section, post the structured result here so
+    mentions become queryable instead of living only in a markdown file.
+    """
+    db = _get_db(request)
+    if not db.get_by_id(capture_id):
+        raise HTTPException(status_code=404, detail="Capture not found")
+
+    for ent in body.entities:
+        entity_id = db.upsert_entity(
+            name=ent.name,
+            entity_type=ent.entity_type,
+            market=ent.market,
+            ticker=ent.ticker,
+            canonical_name=ent.canonical_name,
+        )
+        db.link_capture_entity(
+            capture_id,
+            entity_id,
+            role=ent.role,
+            confidence=ent.confidence,
+            evidence=ent.evidence,
+        )
+
+    return CaptureEntitiesResponse(
+        capture_id=capture_id,
+        entities=[
+            CaptureEntityItem(**row)
+            for row in db.get_entities_for_capture(capture_id)
+        ],
+    )
+
+
+@router.get("/{capture_id}/entities", response_model=CaptureEntitiesResponse)
+async def get_capture_entities(
+    capture_id: str,
+    request: Request,
+    token: str = Depends(verify_token),
+):
+    db = _get_db(request)
+    if not db.get_by_id(capture_id):
+        raise HTTPException(status_code=404, detail="Capture not found")
+
+    return CaptureEntitiesResponse(
+        capture_id=capture_id,
+        entities=[
+            CaptureEntityItem(**row)
+            for row in db.get_entities_for_capture(capture_id)
+        ],
     )

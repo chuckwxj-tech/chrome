@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusDot = document.getElementById('statusDot');
   const linkOptions = document.getElementById('linkOptions');
   const linkRecent = document.getElementById('linkRecent');
+  const recentSection = document.getElementById('recentSection');
+  const recentList = document.getElementById('recentList');
 
   // ── State ──────────────────────────────────────────────────────
   let selectedTags = [];
@@ -164,15 +166,78 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   linkRecent.addEventListener('click', (e) => {
     e.preventDefault();
-    // For now, just show captured count from a quick API call
-    chrome.runtime.sendMessage({ type: 'CHECK_CONNECTION' }, (result) => {
-      if (result?.success) {
-        showStatus('success', '服务器已连接');
-      } else {
-        showStatus('error', '无法连接服务器');
+    if (!recentSection.hidden) {
+      recentSection.hidden = true;
+      return;
+    }
+    showStatus('loading', '加载最近捕获...');
+    chrome.runtime.sendMessage({ type: 'GET_RECENT', limit: 10 }, (result) => {
+      if (!result?.success) {
+        showStatus('error', result?.error || '无法获取最近捕获');
+        return;
       }
+      renderRecent(result.captures);
+      recentSection.hidden = false;
+      showStatus('success', `共 ${result.total} 条捕获`);
     });
   });
+
+  const TYPE_LABELS = {
+    page: '页面',
+    selection: '选文',
+    link: '链接',
+    pdf: 'PDF',
+    image: '图片',
+  };
+
+  function renderRecent(captures) {
+    recentList.textContent = '';
+    if (!captures.length) {
+      const empty = document.createElement('div');
+      empty.className = 'recent-empty';
+      empty.textContent = '暂无捕获记录';
+      recentList.appendChild(empty);
+      return;
+    }
+    for (const item of captures) {
+      const row = document.createElement('a');
+      row.className = 'recent-item';
+      row.href = item.url;
+      row.target = '_blank';
+      row.rel = 'noopener';
+      row.title = item.url;
+
+      const type = document.createElement('span');
+      type.className = 'recent-type';
+      type.textContent = TYPE_LABELS[item.capture_type] || item.capture_type;
+
+      const main = document.createElement('span');
+      main.className = 'recent-main';
+      const title = document.createElement('span');
+      title.className = 'recent-title';
+      title.textContent = item.title || item.url;
+      const meta = document.createElement('span');
+      meta.className = 'recent-meta';
+      meta.textContent = `${item.source_domain} · ${formatRelativeTime(item.captured_at)}`;
+      main.appendChild(title);
+      main.appendChild(meta);
+
+      row.appendChild(type);
+      row.appendChild(main);
+      recentList.appendChild(row);
+    }
+  }
+
+  function formatRelativeTime(isoString) {
+    const then = Date.parse(isoString);
+    if (Number.isNaN(then)) return '';
+    const diffMin = Math.floor((Date.now() - then) / 60000);
+    if (diffMin < 1) return '刚刚';
+    if (diffMin < 60) return `${diffMin} 分钟前`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours} 小时前`;
+    return `${Math.floor(diffHours / 24)} 天前`;
+  }
 
   // ── Connection & config check on open ──────────────────────────
   const config = await chrome.storage.local.get(['api_base_url', 'capture_token']);

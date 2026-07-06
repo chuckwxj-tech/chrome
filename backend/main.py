@@ -35,10 +35,12 @@ app.add_middleware(
 from routes.health import router as health_router
 from routes.capture import router as capture_router
 from routes.captures import router as captures_router
+from routes.entities import router as entities_router
 
 app.include_router(health_router)
 app.include_router(capture_router, prefix="/capture")
 app.include_router(captures_router, prefix="/captures")
+app.include_router(entities_router, prefix="/entities")
 
 if __name__ == "__main__":
     import uvicorn

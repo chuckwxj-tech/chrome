@@ -160,6 +160,55 @@ class RecentCapturesResponse(BaseModel):
     total: int
 
 
+class EntityMappingIn(BaseModel):
+    """One entity extracted from a capture (e.g. from LLM analysis output)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    entity_type: str | None = None
+    market: str | None = None
+    ticker: str | None = None
+    canonical_name: str | None = None
+    role: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence: str | None = None
+
+
+class AttachEntitiesRequest(BaseModel):
+    entities: list[EntityMappingIn] = Field(min_length=1, max_length=50)
+
+
+class CaptureEntityItem(BaseModel):
+    id: int
+    name: str
+    entity_type: str | None = None
+    market: str | None = None
+    ticker: str | None = None
+    canonical_name: str | None = None
+    role: str | None = None
+    confidence: float | None = None
+    evidence: str | None = None
+
+
+class CaptureEntitiesResponse(BaseModel):
+    success: bool = True
+    capture_id: str
+    entities: list[CaptureEntityItem]
+
+
+class EntityStatsItem(BaseModel):
+    id: int
+    name: str
+    entity_type: str | None = None
+    market: str | None = None
+    ticker: str | None = None
+    mention_count: int
+    last_mentioned_at: str | None = None
+
+
+class EntityStatsResponse(BaseModel):
+    entities: list[EntityStatsItem]
+
+
 class AnalysisPromptResponse(BaseModel):
     success: bool
     id: str
