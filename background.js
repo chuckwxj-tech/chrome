@@ -47,20 +47,134 @@ async function callApi(endpoint, body, tabId) {
     if (response.ok) {
       showSuccess(data.file_slug || data.id || '', tabId);
       console.log('[Cloud Vault] Saved:', data.file_slug || data.id);
+      // Server reachable — opportunistically drain any queued captures
+      flushRetryQueue();
       return data;
     }
 
     showError(data.detail || `服务器错误 ${response.status}`, tabId);
     return { success: false, error: data.detail || `HTTP ${response.status}` };
   } catch (err) {
-    if (err.name === 'AbortError') {
-      showError('连接超时，请检查服务器是否在线', tabId);
-      return { success: false, error: '请求超时' };
+    // Network failure or timeout: keep the capture, retry later
+    const queued = await enqueueFailedCapture(endpoint, body);
+    const reason = err.name === 'AbortError' ? '连接超时' : '无法连接服务器';
+    if (queued) {
+      showError(`${reason}，已存入队列稍后自动补传`, tabId);
+      return { success: false, queued: true, error: `${reason}（已入队）` };
     }
-    showError('无法连接到 Cloud Vault 服务器，请检查 API 地址配置', tabId);
-    return { success: false, error: '无法连接' };
+    showError(`${reason}，请检查 API 地址配置`, tabId);
+    return { success: false, error: reason };
   }
 }
+
+// ── Offline Retry Queue ──────────────────────────────────────────
+// Captures that failed on network errors are kept in storage and
+// re-posted by a periodic alarm (and opportunistically after any
+// successful capture). Backend dedup makes re-posting safe.
+const QUEUE_KEY = 'retry_queue';
+const QUEUE_MAX = 50;
+const QUEUE_MAX_AGE_MS = 48 * 60 * 60 * 1000; // drop after 48h
+const RETRY_ALARM = 'cv-retry-queue';
+
+async function getQueue() {
+  const items = await chrome.storage.local.get([QUEUE_KEY]);
+  return Array.isArray(items[QUEUE_KEY]) ? items[QUEUE_KEY] : [];
+}
+
+async function setQueue(queue) {
+  await chrome.storage.local.set({ [QUEUE_KEY]: queue });
+}
+
+async function enqueueFailedCapture(endpoint, body) {
+  try {
+    const queue = await getQueue();
+    queue.push({
+      id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      endpoint,
+      body,
+      queued_at: Date.now(),
+      attempts: 0,
+    });
+    // Cap size: drop oldest first
+    while (queue.length > QUEUE_MAX) queue.shift();
+    await setQueue(queue);
+    return true;
+  } catch (err) {
+    console.error('[Cloud Vault] enqueue failed:', err.message);
+    return false;
+  }
+}
+
+let flushInProgress = false;
+
+async function flushRetryQueue() {
+  if (flushInProgress) return { flushed: 0, remaining: -1 };
+  flushInProgress = true;
+  try {
+    const { apiBase, token } = await getConfig();
+    let queue = await getQueue();
+    if (!queue.length || !token) {
+      return { flushed: 0, remaining: queue.length };
+    }
+
+    const now = Date.now();
+    const keep = [];
+    let flushed = 0;
+
+    for (const item of queue) {
+      if (now - item.queued_at > QUEUE_MAX_AGE_MS) continue; // expired
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(`${apiBase}${item.endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(item.body),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          flushed++;
+        } else if (response.status === 401 || response.status >= 500 || response.status === 429) {
+          // Recoverable (bad token can be fixed, server may come back)
+          item.attempts++;
+          keep.push(item);
+        }
+        // Other 4xx: permanent rejection, drop silently
+      } catch (_) {
+        item.attempts++;
+        keep.push(item);
+      }
+    }
+
+    await setQueue(keep);
+    if (flushed > 0) {
+      showNotification('Cloud Vault 补传完成', `已补传 ${flushed} 条离线采集`);
+      console.log('[Cloud Vault] retry queue flushed:', flushed, 'remaining:', keep.length);
+    }
+    return { flushed, remaining: keep.length };
+  } finally {
+    flushInProgress = false;
+  }
+}
+
+function ensureRetryAlarm() {
+  chrome.alarms?.create?.(RETRY_ALARM, { periodInMinutes: 5 });
+}
+
+chrome.alarms?.onAlarm?.addListener((alarm) => {
+  if (alarm.name === RETRY_ALARM) flushRetryQueue();
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  ensureRetryAlarm();
+  flushRetryQueue();
+});
 
 // ── Badge ────────────────────────────────────────────────────────
 function showBadge(tabId, text, color) {
@@ -337,6 +451,7 @@ async function captureImage(imageUrl, altText, pageUrl) {
 
 // ── Context Menus ────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
+  ensureRetryAlarm();
   chrome.contextMenus.create({
     id: 'cv-save-page',
     title: '保存当前页面到 Cloud Vault',
@@ -480,6 +595,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       sendResponse(result);
     });
+    return true;
+  }
+
+  if (message.type === 'QUEUE_STATUS') {
+    getQueue().then((queue) => sendResponse({ success: true, count: queue.length }));
+    return true;
+  }
+
+  if (message.type === 'FLUSH_QUEUE') {
+    flushRetryQueue().then((result) => sendResponse({ success: true, ...result }));
     return true;
   }
 

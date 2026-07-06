@@ -98,6 +98,28 @@ ANALYSIS_TEMPLATE = """# 投研信息分析任务
 ## 8. 待核查问题
 
 列出需要继续查证的问题。
+
+## 9. 结构化实体输出
+
+在回答的最后，输出一个 ```json 代码块，包含第 4 节提到的所有公司，格式如下（confidence 取 0-1）：
+
+```json
+{
+  "entities": [
+    {
+      "name": "公司名",
+      "entity_type": "company",
+      "market": "A股|港股|美股|台股|日股|韩股",
+      "ticker": "代码",
+      "role": "subject|supplier|customer|competitor",
+      "confidence": 0.8,
+      "evidence": "一句话依据"
+    }
+  ]
+}
+```
+
+这个代码块会被程序解析入库，务必保证是合法 JSON。
 """
 
 

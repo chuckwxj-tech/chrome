@@ -126,6 +126,13 @@
     <p class="hint">与服务端 .env 中 LOCAL_CAPTURE_TOKEN 一致的认证令牌</p>
   </div>
 
+  <div class="field">
+    <label for="customTags">自定义标签（逗号分隔）</label>
+    <input type="text" id="customTags"
+           placeholder="AI服务器, CPO, 光模块, ...（留空使用默认标签）">
+    <p class="hint">弹窗中的标签选项。用中文或英文逗号分隔，留空则使用内置默认标签集</p>
+  </div>
+
   <div style="display: flex; align-items: center;">
     <button class="btn btn-primary" id="btnSave">保存</button>
     <button class="btn btn-secondary" id="btnTest">测试连接</button>

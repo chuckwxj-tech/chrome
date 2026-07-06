@@ -21,7 +21,18 @@ The token is stored in Chrome extension local storage. Do not commit tokens, `.e
 ## Features
 
 - Capture pages, selections, links, PDFs, and images via popup, context menu, or shortcuts (Alt+S / Alt+Shift+S).
+- Offline retry queue: captures that fail on network errors are stored
+  locally and re-posted automatically every 5 minutes (and after the next
+  successful capture). The popup shows a pending-count banner with a
+  manual retry button. Backend dedup makes re-posting safe.
+- Popup tag chips are configurable in the options page (comma-separated
+  custom tags; empty falls back to the built-in set).
 - Popup 「最近捕获」 lists the latest captures from `GET /captures/recent`.
+- Analysis loop: `POST /captures/{id}/build-analysis-prompt` generates a
+  prompt whose template ends with a structured `entities` JSON block;
+  paste the LLM's full answer into `POST /captures/{id}/analysis-result`
+  to archive it, extract entities into the DB, and mark the capture
+  `analyzed`.
 - Entity write-back: after analysis, post structured company mappings to
   `POST /captures/{id}/entities`; query per-capture entities via
   `GET /captures/{id}/entities` and cross-capture mention counts via

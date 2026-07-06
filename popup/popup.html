@@ -44,23 +44,7 @@
     <!-- Tags -->
     <div class="section">
       <label class="section-label">标签</label>
-      <div class="tags-container" id="tagsContainer">
-        <button class="tag-chip" data-tag="AI服务器">AI服务器</button>
-        <button class="tag-chip" data-tag="CPO">CPO</button>
-        <button class="tag-chip" data-tag="光模块">光模块</button>
-        <button class="tag-chip" data-tag="PCB">PCB</button>
-        <button class="tag-chip" data-tag="MLCC">MLCC</button>
-        <button class="tag-chip" data-tag="HBM">HBM</button>
-        <button class="tag-chip" data-tag="半导体设备">半导体设备</button>
-        <button class="tag-chip" data-tag="算力">算力</button>
-        <button class="tag-chip" data-tag="先进封装">先进封装</button>
-        <button class="tag-chip" data-tag="美股">美股</button>
-        <button class="tag-chip" data-tag="A股映射">A股映射</button>
-        <button class="tag-chip" data-tag="港股">港股</button>
-        <button class="tag-chip" data-tag="财报">财报</button>
-        <button class="tag-chip" data-tag="行业趋势">行业趋势</button>
-        <button class="tag-chip" data-tag="政策">政策</button>
-      </div>
+      <div class="tags-container" id="tagsContainer"></div>
     </div>
 
     <!-- Research Intent -->
@@ -76,6 +60,9 @@
       <textarea id="userNotes" class="input textarea" rows="2"
                 placeholder="补充笔记..."></textarea>
     </div>
+
+    <!-- Offline retry queue banner -->
+    <button class="queue-banner" id="queueBanner" hidden></button>
 
     <!-- Recent captures (toggled from footer link) -->
     <div class="section" id="recentSection" hidden>

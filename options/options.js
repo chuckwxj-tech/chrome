@@ -3,14 +3,16 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const apiUrl = document.getElementById('apiUrl');
   const captureToken = document.getElementById('captureToken');
+  const customTags = document.getElementById('customTags');
   const btnSave = document.getElementById('btnSave');
   const btnTest = document.getElementById('btnTest');
   const statusArea = document.getElementById('statusArea');
 
   // Load saved values
-  const items = await chrome.storage.local.get(['api_base_url', 'capture_token']);
+  const items = await chrome.storage.local.get(['api_base_url', 'capture_token', 'custom_tags']);
   if (items.api_base_url) apiUrl.value = items.api_base_url;
   if (items.capture_token) captureToken.value = items.capture_token;
+  if (Array.isArray(items.custom_tags)) customTags.value = items.custom_tags.join(', ');
 
   function showStatus(msg, type) {
     statusArea.innerHTML = `<div class="status ${type}">${msg}</div>`;
@@ -25,9 +27,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    // Parse custom tags: comma-separated (中/英文逗号), dedupe, cap at 30
+    const tags = [...new Set(
+      customTags.value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
+    )].slice(0, 30);
+
     await chrome.storage.local.set({
       api_base_url: url,
       capture_token: token,
+      custom_tags: tags,
     });
 
     showStatus('设置已保存', 'success');

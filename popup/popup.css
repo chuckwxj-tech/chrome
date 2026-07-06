@@ -269,6 +269,35 @@ body {
   color: var(--border);
 }
 
+/* Offline retry queue banner */
+.queue-banner[hidden] {
+  display: none;
+}
+
+.queue-banner {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid #f5d08c;
+  border-radius: var(--radius);
+  background: #fef9e7;
+  color: #b9770e;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.queue-banner:hover:not(:disabled) {
+  background: #fdf2d0;
+}
+
+.queue-banner:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* Recent captures */
 .recent-list {
   max-height: 190px;

@@ -14,6 +14,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const linkRecent = document.getElementById('linkRecent');
   const recentSection = document.getElementById('recentSection');
   const recentList = document.getElementById('recentList');
+  const tagsContainer = document.getElementById('tagsContainer');
+  const queueBanner = document.getElementById('queueBanner');
+
+  const DEFAULT_TAGS = [
+    'AI服务器', 'CPO', '光模块', 'PCB', 'MLCC', 'HBM', '半导体设备',
+    '算力', '先进封装', '美股', 'A股映射', '港股', '财报', '行业趋势', '政策',
+  ];
 
   // ── State ──────────────────────────────────────────────────────
   let selectedTags = [];
@@ -21,12 +28,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Load saved state ───────────────────────────────────────────
   const items = await chrome.storage.local.get([
-    'tags', 'priority', 'research_intent', 'user_notes'
+    'tags', 'priority', 'research_intent', 'user_notes', 'custom_tags'
   ]);
   if (items.tags) selectedTags = items.tags;
   if (items.priority) priority = items.priority;
   if (items.research_intent) researchIntent.value = items.research_intent;
   if (items.user_notes) userNotes.value = items.user_notes;
+  const availableTags = (Array.isArray(items.custom_tags) && items.custom_tags.length)
+    ? items.custom_tags
+    : DEFAULT_TAGS;
 
   // ── Init UI state ──────────────────────────────────────────────
   // Check if there's a text selection
@@ -66,20 +76,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Tag chips ──────────────────────────────────────────────────
-  document.querySelectorAll('.tag-chip').forEach(chip => {
-    if (selectedTags.includes(chip.dataset.tag)) chip.classList.add('active');
+  // ── Tag chips (rendered from options-configurable list) ───────
+  for (const tag of availableTags) {
+    const chip = document.createElement('button');
+    chip.className = 'tag-chip';
+    chip.dataset.tag = tag;
+    chip.textContent = tag;
+    if (selectedTags.includes(tag)) chip.classList.add('active');
 
     chip.addEventListener('click', () => {
       chip.classList.toggle('active');
       if (chip.classList.contains('active')) {
-        if (!selectedTags.includes(chip.dataset.tag)) selectedTags.push(chip.dataset.tag);
+        if (!selectedTags.includes(tag)) selectedTags.push(tag);
       } else {
-        selectedTags = selectedTags.filter(t => t !== chip.dataset.tag);
+        selectedTags = selectedTags.filter(t => t !== tag);
       }
       savePrefs();
     });
-  });
+    tagsContainer.appendChild(chip);
+  }
+  // Drop selections for tags no longer offered
+  selectedTags = selectedTags.filter(t => availableTags.includes(t));
 
   // ── Input changes → save ──────────────────────────────────────
   researchIntent.addEventListener('change', savePrefs);
@@ -238,6 +255,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (diffHours < 24) return `${diffHours} 小时前`;
     return `${Math.floor(diffHours / 24)} 天前`;
   }
+
+  // ── Offline retry queue banner ─────────────────────────────────
+  function refreshQueueBanner() {
+    chrome.runtime.sendMessage({ type: 'QUEUE_STATUS' }, (result) => {
+      const count = result?.count || 0;
+      queueBanner.hidden = count === 0;
+      if (count > 0) {
+        queueBanner.textContent = `⚠ ${count} 条采集待补传 — 点击立即重试`;
+      }
+    });
+  }
+
+  queueBanner.addEventListener('click', () => {
+    queueBanner.disabled = true;
+    queueBanner.textContent = '补传中...';
+    chrome.runtime.sendMessage({ type: 'FLUSH_QUEUE' }, (result) => {
+      queueBanner.disabled = false;
+      if (result?.flushed > 0) {
+        showStatus('success', `已补传 ${result.flushed} 条`);
+      } else if (result?.remaining > 0) {
+        showStatus('error', '补传失败，服务器仍不可达');
+      }
+      refreshQueueBanner();
+    });
+  });
+
+  refreshQueueBanner();
 
   // ── Connection & config check on open ──────────────────────────
   const config = await chrome.storage.local.get(['api_base_url', 'capture_token']);

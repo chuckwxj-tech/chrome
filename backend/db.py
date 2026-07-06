@@ -258,6 +258,13 @@ class Database:
         )
         self._conn.commit()
 
+    def update_status(self, capture_id: str, status: str):
+        self._conn.execute(
+            "UPDATE captures SET status = ? WHERE id = ?",
+            (status, capture_id),
+        )
+        self._conn.commit()
+
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM captures").fetchone()[0]
 

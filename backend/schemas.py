@@ -209,6 +209,20 @@ class EntityStatsResponse(BaseModel):
     entities: list[EntityStatsItem]
 
 
+class AnalysisResultRequest(BaseModel):
+    """Full LLM analysis output; the trailing ```json block is parsed."""
+
+    analysis_markdown: str = Field(min_length=1)
+
+
+class AnalysisResultResponse(BaseModel):
+    success: bool = True
+    capture_id: str
+    entities_extracted: int
+    analysis_path: str
+    entities: list[CaptureEntityItem]
+
+
 class AnalysisPromptResponse(BaseModel):
     success: bool
     id: str

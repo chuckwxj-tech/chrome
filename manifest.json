@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Cloud Vault Capture",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "投研信息捕获器 — 一键保存网页、选中文本、链接到 Cloud Vault 资料库",
   "permissions": [
     "storage",
     "contextMenus",
     "activeTab",
     "scripting",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"
