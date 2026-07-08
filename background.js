@@ -13,6 +13,24 @@ async function getConfig() {
 }
 
 // ── API Client ───────────────────────────────────────────────────
+
+// FastAPI 422 responses carry `detail` as an array of {loc, msg}
+// objects; rendering that directly shows "[object Object]".
+function formatErrorDetail(detail) {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        const loc = (e.loc || []).filter((p) => p !== 'body').join('.');
+        return loc ? `${loc}: ${e.msg || ''}` : (e.msg || '');
+      })
+      .filter(Boolean)
+      .join('; ');
+  }
+  if (detail && typeof detail === 'object') return JSON.stringify(detail);
+  return '';
+}
+
 async function callApi(endpoint, body, tabId) {
   const { apiBase, token } = await getConfig();
 
@@ -52,12 +70,21 @@ async function callApi(endpoint, body, tabId) {
       return data;
     }
 
-    showError(data.detail || `服务器错误 ${response.status}`, tabId);
-    return { success: false, error: data.detail || `HTTP ${response.status}` };
+    const detail = formatErrorDetail(data.detail);
+    showError(detail || `服务器错误 ${response.status}`, tabId);
+    return { success: false, error: detail || `HTTP ${response.status}` };
   } catch (err) {
+    console.error('[Cloud Vault] fetch error:', err.name, err.message, endpoint);
     // Network failure or timeout: keep the capture, retry later
     const queued = await enqueueFailedCapture(endpoint, body);
-    const reason = err.name === 'AbortError' ? '连接超时' : '无法连接服务器';
+    let reason;
+    if (err.name === 'AbortError') {
+      reason = '连接超时';
+    } else if (/Failed to fetch|NetworkError/i.test(err.message || '')) {
+      reason = '无法连接服务器（后端未启动或网络不可达）';
+    } else {
+      reason = `无法连接服务器: ${err.message || '未知网络错误'}`;
+    }
     if (queued) {
       showError(`${reason}，已存入队列稍后自动补传`, tabId);
       return { success: false, queued: true, error: `${reason}（已入队）` };
@@ -318,6 +345,13 @@ async function capturePage(tab) {
     }
 
     const data = contentResult.data;
+    // Pre-empt the backend's min_length validation with a clear message
+    if (!data.content || !String(data.content).trim()) {
+      return {
+        success: false,
+        error: '页面内容为空，可能页面尚未加载完成，请稍后重试',
+      };
+    }
     const contentHash = await hashText(data.content);
 
     // Get user preferences from storage
@@ -516,7 +550,7 @@ async function uploadBookmarksBatch(items) {
       }
 
       let detail = '';
-      try { detail = (await response.json()).detail || ''; } catch (_) {}
+      try { detail = formatErrorDetail((await response.json()).detail); } catch (_) {}
 
       if (response.status === 404) {
         // Endpoint missing: the server is running an older backend

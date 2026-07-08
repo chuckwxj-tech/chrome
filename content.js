@@ -11,6 +11,22 @@
     return 'generic';
   }
 
+  // ── DOM Helpers ────────────────────────────────────────────────
+  // SPA pages (X) render content after document_idle; poll until the
+  // selector appears or the timeout elapses (resolves null, no throw).
+  function waitForSelector(selector, timeout = 5000, interval = 250) {
+    return new Promise((resolve) => {
+      const startedAt = Date.now();
+      const check = () => {
+        const el = document.querySelector(selector);
+        if (el) return resolve(el);
+        if (Date.now() - startedAt >= timeout) return resolve(null);
+        setTimeout(check, interval);
+      };
+      check();
+    });
+  }
+
   // ── Generic Page Extraction ────────────────────────────────────
   function extractGeneric() {
     try {
@@ -59,23 +75,33 @@
   }
 
   // ── X.com Extraction ───────────────────────────────────────────
-  function extractXContent() {
+  async function extractXContent() {
     try {
-      const tweetEl = document.querySelector('[data-testid="tweetText"]');
-      const authorEl = document.querySelector('[data-testid="User-Name"]');
-      const timeEl = document.querySelector('time');
+      // Wait for the SPA to render the tweet before extracting
+      await waitForSelector('article [data-testid="tweetText"]');
+
+      // Scope to <article> to avoid picking up sidebar recommendations
+      const tweetEl = document.querySelector('article [data-testid="tweetText"]');
+      const authorEl = document.querySelector('article [data-testid="User-Name"]');
+      const timeEl = document.querySelector('article time');
       const tweetText = tweetEl?.innerText || '';
       const author = authorEl?.innerText?.split('\n')[0] || null;
       const time = timeEl?.getAttribute('datetime') || null;
 
       // Try to get the thread context
       const contextTweets = Array.from(
-        document.querySelectorAll('[data-testid="tweetText"]')
+        document.querySelectorAll('article [data-testid="tweetText"]')
       ).map(el => el.innerText).join('\n\n---\n\n');
 
+      // Never return empty content — 422s on the backend otherwise
+      const content = contextTweets || tweetText
+        || document.body?.innerText?.slice(0, 10000) || '';
+
       return {
-        title: tweetText.slice(0, 80) + (tweetText.length > 80 ? '...' : ''),
-        content: contextTweets || tweetText,
+        title: tweetText
+          ? tweetText.slice(0, 80) + (tweetText.length > 80 ? '...' : '')
+          : (document.title || 'X Post'),
+        content,
         byline: author,
         publishedAt: time,
         platform: 'x',
@@ -122,10 +148,15 @@
   }
 
   // ── Main Extraction ────────────────────────────────────────────
-  function extractContent() {
+  // Cap raw HTML client-side: news/report pages inline scripts and
+  // base64 images into multi-MB documents that fail in transit. The
+  // backend truncates at 1MB on disk anyway.
+  const MAX_RAW_HTML_CHARS = 500000;
+
+  async function extractContent() {
     const platform = detectPlatform(location.href);
     let result;
-    if (platform === 'x') result = extractXContent();
+    if (platform === 'x') result = await extractXContent();
     else if (platform === 'youtube') result = extractYoutubeContent();
     else result = extractGeneric();
 
@@ -134,7 +165,11 @@
 
     // Also grab raw HTML for generic pages
     if (platform === 'generic') {
-      result.rawHtml = document.documentElement.outerHTML;
+      const rawHtml = document.documentElement.outerHTML;
+      result.rawHtml = rawHtml.length > MAX_RAW_HTML_CHARS
+        ? rawHtml.slice(0, MAX_RAW_HTML_CHARS) +
+          '\n<!-- [Content truncated at 500000 chars] -->'
+        : rawHtml;
     }
 
     return result;
@@ -148,12 +183,15 @@
     }
 
     if (message.type === 'EXTRACT_CONTENT') {
-      try {
-        const result = extractContent();
-        sendResponse({ success: true, data: result });
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
+      // Async: keep the message channel open for the SPA wait
+      (async () => {
+        try {
+          const result = await extractContent();
+          sendResponse({ success: true, data: result });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
       return true;
     }
 
