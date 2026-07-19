@@ -115,10 +115,14 @@ async function setQueue(queue) {
 async function enqueueFailedCapture(endpoint, body) {
   try {
     const queue = await getQueue();
+    // Drop raw_html from queued copies: page captures can carry ~500KB
+    // each, and 50 of those would blow the ~10MB storage.local quota.
+    const storable = { ...(body || {}) };
+    delete storable.raw_html;
     queue.push({
       id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
       endpoint,
-      body,
+      body: storable,
       queued_at: Date.now(),
       attempts: 0,
     });
