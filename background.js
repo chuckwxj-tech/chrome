@@ -31,6 +31,46 @@ function formatErrorDetail(detail) {
   return '';
 }
 
+// Proxies and nginx answer with HTML error pages, so response.json()
+// throws on exactly the failures we most need to classify. Never let
+// that throw escape into the network-error path.
+async function readJsonSafely(response) {
+  try {
+    return await response.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+// Describe a non-OK status, and say whether retrying could ever help.
+function describeHttpStatus(status, detail) {
+  if (status === 413) {
+    return { recoverable: false, message: '请求体过大被服务器拒绝 (413)' };
+  }
+  if (status === 502 || status === 504) {
+    return {
+      recoverable: true,
+      message: `网关错误 (${status}) — 请求可能被代理拦截，请为服务器 IP 配置直连规则`,
+    };
+  }
+  if (status === 404) {
+    return {
+      recoverable: false,
+      message: '接口不存在 (404) — 服务器后端不是最新版本，请更新部署 backend',
+    };
+  }
+  if (status >= 500 || status === 429) {
+    return {
+      recoverable: true,
+      message: `服务器错误 ${status}${detail ? ' — ' + detail : ''}`,
+    };
+  }
+  return {
+    recoverable: false,
+    message: detail || `服务器错误 ${status}`,
+  };
+}
+
 async function callApi(endpoint, body, tabId) {
   const { apiBase, token } = await getConfig();
 
@@ -41,7 +81,7 @@ async function callApi(endpoint, body, tabId) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), timeoutForEndpoint(endpoint));
 
     const response = await fetch(`${apiBase}${endpoint}`, {
       method: 'POST',
@@ -60,19 +100,27 @@ async function callApi(endpoint, body, tabId) {
       return { success: false, error: 'Token 无效' };
     }
 
-    const data = await response.json();
+    const data = await readJsonSafely(response);
 
     if (response.ok) {
-      showSuccess(data.file_slug || data.id || '', tabId);
-      console.log('[Cloud Vault] Saved:', data.file_slug || data.id);
+      const payload = data || {};
+      showSuccess(payload.file_slug || payload.id || '', tabId);
+      console.log('[Cloud Vault] Saved:', payload.file_slug || payload.id);
       // Server reachable — opportunistically drain any queued captures
       flushRetryQueue();
-      return data;
+      return payload;
     }
 
-    const detail = formatErrorDetail(data.detail);
-    showError(detail || `服务器错误 ${response.status}`, tabId);
-    return { success: false, error: detail || `HTTP ${response.status}` };
+    const detail = formatErrorDetail(data?.detail);
+    const { recoverable, message } = describeHttpStatus(response.status, detail);
+    console.error('[Cloud Vault] http error:', response.status, endpoint, message);
+
+    if (recoverable && (await enqueueFailedCapture(endpoint, body))) {
+      showError(`${message}，已存入队列稍后自动补传`, tabId);
+      return { success: false, queued: true, error: `${message}（已入队）` };
+    }
+    showError(message, tabId);
+    return { success: false, error: message };
   } catch (err) {
     console.error('[Cloud Vault] fetch error:', err.name, err.message, endpoint);
     // Network failure or timeout: keep the capture, retry later
@@ -100,16 +148,50 @@ async function callApi(endpoint, body, tabId) {
 // successful capture). Backend dedup makes re-posting safe.
 const QUEUE_KEY = 'retry_queue';
 const QUEUE_MAX = 50;
+const QUEUE_MAX_BYTES = 4 * 1024 * 1024; // stay well under the 10MB storage quota
 const QUEUE_MAX_AGE_MS = 48 * 60 * 60 * 1000; // drop after 48h
+const QUEUE_MAX_ATTEMPTS = 12;
 const RETRY_ALARM = 'cv-retry-queue';
+
+// Page captures carry raw_html (up to 500k chars) and bookmark chunks
+// carry up to 100 tweets, so an unbounded queue can blow the extension
+// storage quota. Trim oldest-first until it fits by count and by bytes.
+function trimQueue(queue) {
+  while (queue.length > QUEUE_MAX) queue.shift();
+  while (queue.length > 1 && JSON.stringify(queue).length > QUEUE_MAX_BYTES) {
+    queue.shift();
+  }
+  return queue;
+}
+
+function timeoutForEndpoint(endpoint) {
+  // Batch uploads carry up to 100 items; they need a bigger budget than
+  // a single capture, on the first attempt and on every retry alike.
+  return endpoint === '/capture/batch' ? 60000 : 15000;
+}
 
 async function getQueue() {
   const items = await chrome.storage.local.get([QUEUE_KEY]);
   return Array.isArray(items[QUEUE_KEY]) ? items[QUEUE_KEY] : [];
 }
 
+// Never throws: on a quota error, sheds the oldest half and retries once.
 async function setQueue(queue) {
-  await chrome.storage.local.set({ [QUEUE_KEY]: queue });
+  try {
+    await chrome.storage.local.set({ [QUEUE_KEY]: trimQueue(queue) });
+    return true;
+  } catch (err) {
+    console.error('[Cloud Vault] queue write failed:', err.message);
+    try {
+      const halved = queue.slice(Math.ceil(queue.length / 2));
+      await chrome.storage.local.set({ [QUEUE_KEY]: halved });
+      console.warn('[Cloud Vault] queue shrunk to', halved.length, 'entries');
+      return true;
+    } catch (err2) {
+      console.error('[Cloud Vault] queue write failed again:', err2.message);
+      return false;
+    }
+  }
 }
 
 async function enqueueFailedCapture(endpoint, body) {
@@ -122,10 +204,7 @@ async function enqueueFailedCapture(endpoint, body) {
       queued_at: Date.now(),
       attempts: 0,
     });
-    // Cap size: drop oldest first
-    while (queue.length > QUEUE_MAX) queue.shift();
-    await setQueue(queue);
-    return true;
+    return await setQueue(queue);
   } catch (err) {
     console.error('[Cloud Vault] enqueue failed:', err.message);
     return false;
@@ -150,10 +229,16 @@ async function flushRetryQueue() {
 
     for (const item of queue) {
       if (now - item.queued_at > QUEUE_MAX_AGE_MS) continue; // expired
+      if ((item.attempts || 0) >= QUEUE_MAX_ATTEMPTS) {
+        console.warn('[Cloud Vault] dropping queue entry after',
+          item.attempts, 'attempts:', item.endpoint);
+        continue;
+      }
 
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
+        const timeout = setTimeout(
+          () => controller.abort(), timeoutForEndpoint(item.endpoint));
         const response = await fetch(`${apiBase}${item.endpoint}`, {
           method: 'POST',
           headers: {
@@ -495,11 +580,23 @@ async function startBookmarksExport() {
 
   const tab = await chrome.tabs.create({ url: X_BOOKMARKS_URL, active: true });
 
-  // Inject the collector once the bookmarks page finishes loading
+  // Inject the collector once the bookmarks page finishes loading.
+  // Every exit path must detach the listeners: if X redirects to login
+  // or the user closes the tab, a stray listener would otherwise fire
+  // on some unrelated later navigation.
+  let settled = false;
+  const cleanup = () => {
+    if (settled) return;
+    settled = true;
+    chrome.tabs.onUpdated.removeListener(onUpdated);
+    chrome.tabs.onRemoved.removeListener(onRemoved);
+    clearTimeout(giveUpTimer);
+  };
+
   const onUpdated = (tabId, changeInfo, updatedTab) => {
     if (tabId !== tab.id || changeInfo.status !== 'complete') return;
     if (!/x\.com\/i\/bookmarks/.test(updatedTab.url || '')) return;
-    chrome.tabs.onUpdated.removeListener(onUpdated);
+    cleanup();
     // X hydrates after 'complete'; give the timeline a moment
     setTimeout(() => {
       chrome.scripting.executeScript({
@@ -511,7 +608,19 @@ async function startBookmarksExport() {
       });
     }, 3000);
   };
+
+  const onRemoved = (tabId) => {
+    if (tabId === tab.id) cleanup();
+  };
+
+  const giveUpTimer = setTimeout(() => {
+    if (settled) return;
+    cleanup();
+    showNotification('Cloud Vault 导出失败', '书签页未能加载，请确认已登录 X 后重试');
+  }, 60000);
+
   chrome.tabs.onUpdated.addListener(onUpdated);
+  chrome.tabs.onRemoved.addListener(onRemoved);
 
   return { success: true, tabId: tab.id };
 }
@@ -549,23 +658,17 @@ async function uploadBookmarksBatch(items) {
         continue;
       }
 
-      let detail = '';
-      try { detail = formatErrorDetail((await response.json()).detail); } catch (_) {}
+      const data = await readJsonSafely(response);
+      const detail = formatErrorDetail(data?.detail);
+      // 401 is recoverable here too: fixing the token drains the queue
+      const { recoverable, message } = response.status === 401
+        ? { recoverable: true, message: 'Token 无效，请在插件选项中更新' }
+        : describeHttpStatus(response.status, detail);
+      lastError = message;
 
-      if (response.status === 404) {
-        // Endpoint missing: the server is running an older backend
-        lastError = '接口不存在 (404) — 服务器后端不是最新版本，请更新部署 backend';
-        failed += chunk.length;
-      } else if (response.status === 502 || response.status === 504) {
-        lastError = `网关错误 (${response.status}) — 请求被代理拦截，请为服务器 IP 配置直连规则`;
-        await enqueueFailedCapture('/capture/batch', payload);
-        queued += chunk.length;
-      } else if (response.status >= 500 || response.status === 429 || response.status === 401) {
-        lastError = `服务器返回 ${response.status}${detail ? ' — ' + detail : ''}`;
-        await enqueueFailedCapture('/capture/batch', payload);
+      if (recoverable && (await enqueueFailedCapture('/capture/batch', payload))) {
         queued += chunk.length;
       } else {
-        lastError = `HTTP ${response.status}${detail ? ' — ' + detail : ''}`;
         failed += chunk.length;
       }
     } catch (err) {
